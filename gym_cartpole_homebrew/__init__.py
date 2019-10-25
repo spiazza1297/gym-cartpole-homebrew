@@ -2,7 +2,7 @@ from gym.envs.registration import register
 
 register(
     id='CartpoleHomebrew-v0',
-    entry_point='gym-cartpole-homebrew.gym_cartpole_homebrew.envs:CartpoleHomebrewEnv',
+    entry_point='cartpole_homebrew_env:CartpoleHomebrewEnv',
 )
 #register(
 #    id='foo-extrahard-v0',
