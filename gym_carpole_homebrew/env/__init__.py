@@ -1,2 +1,0 @@
-from gym_cartpole_homebrew.envs.cartpole_homebrew_env import CartpoleHomebrewEnv
-#from gym_foo.envs.foo_extrahard_env import FooExtraHardEnv
