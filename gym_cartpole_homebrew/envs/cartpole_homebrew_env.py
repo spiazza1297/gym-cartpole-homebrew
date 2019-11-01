@@ -2,6 +2,10 @@
 Classic cart-pole system implemented by Rich Sutton et al.
 Copied from http://incompleteideas.net/sutton/book/code/pole.c
 permalink: https://perma.cc/C9ZM-652R
+
+This version of cartpole is altered to add noise to the system. The action steps are broken into two methods.
+Step one is the transition from the state by taking an action. Step two is the transition from this post-decision
+state to the final state through some unknown noise.
 """
 
 import math
@@ -15,7 +19,7 @@ class CartpoleHomebrewEnv(gym.Env):
     Description:
         A pole is attached by an un-actuated joint to a cart, which moves along a frictionless track. The pendulum starts upright, and the goal is to prevent it from falling over by increasing and reducing the cart's velocity.
     Source:
-        This environment corresponds to the version of the cart-pole problem described by Barto, Sutton, and Anderson
+        This environment corresponds to the version of the cart-pole problem described by Barto, Sutton, and Anderson. However, noise is added to the system after each action is taken.
     Observation: 
         Type: Box(4)
         Num	Observation                 Min         Max
@@ -34,7 +38,7 @@ class CartpoleHomebrewEnv(gym.Env):
     Reward:
         Reward is 1 for every step taken, including the termination step
     Starting State:
-        All observations are assigned a uniform random value in [-0.05..0.05]
+        All observations are assigned a uniform random value in [-0.05, 0.05]
     Episode Termination:
         Pole Angle is more than 12 degrees
         Cart Position is more than 2.4 (center of the cart reaches the edge of the display)
@@ -49,6 +53,7 @@ class CartpoleHomebrewEnv(gym.Env):
     }
 
     def __init__(self):
+        """Initiates with all variables necessary to compute dynamics of cartpole system"""
         self.gravity = 9.8
         self.masscart = 1.0
         self.masspole = 0.1
@@ -84,26 +89,15 @@ class CartpoleHomebrewEnv(gym.Env):
         return [seed]
 
     def step(self, action):
+        """Takes an action to reach a post-decision state and final state"""
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        state = self.state
-        x, x_dot, theta, theta_dot = state
-        force = self.force_mag if action==1 else -self.force_mag
-        costheta = math.cos(theta)
-        sintheta = math.sin(theta)
-        temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
-        thetaacc = (self.gravity * sintheta - costheta* temp) / (self.length * (4.0/3.0 - self.masspole * costheta * costheta / self.total_mass))
-        xacc  = temp - self.polemass_length * thetaacc * costheta / self.total_mass
-        if self.kinematics_integrator == 'euler':
-            x  = x + self.tau * x_dot
-            x_dot = x_dot + self.tau * xacc
-            theta = theta + self.tau * theta_dot
-            theta_dot = theta_dot + self.tau * thetaacc
-        else: # semi-implicit euler
-            x_dot = x_dot + self.tau * xacc
-            x  = x + self.tau * x_dot
-            theta_dot = theta_dot + self.tau * thetaacc
-            theta = theta + self.tau * theta_dot
-        self.state = (x,x_dot,theta,theta_dot)
+        x_pds, x_dot_pds, theta_pds, theta_dot_pds = self.next_state(action)
+        pds_state = (x_pds, x_dot_pds, theta_pds, theta_dot_pds)
+        
+        #Now implementing noise to arrive at final state
+        x, x_dot, theta, theta_dot = self.step_pds(action)
+        self.state = [x, x_dot, theta, theta_dot]
+        
         done =  x < -self.x_threshold \
                 or x > self.x_threshold \
                 or theta < -self.theta_threshold_radians \
@@ -122,14 +116,46 @@ class CartpoleHomebrewEnv(gym.Env):
             self.steps_beyond_done += 1
             reward = 0.0
 
-        return np.array(self.state), reward, done, {}
+        return np.array(self.state), np.array(pds_state), reward, done, {}
+    
+    def next_state(self, action, wind=0.0):
+        """Computes the dynamics of a cartpole system resulting from an action"""
+        state = self.state
+        x, x_dot, theta, theta_dot = state
+        force = self.force_mag if action==1 else -self.force_mag
+        force += wind
+        costheta = math.cos(theta)
+        sintheta = math.sin(theta)
+        temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
+        thetaacc = (self.gravity * sintheta - costheta* temp) / (self.length * (4.0/3.0 - self.masspole * costheta * costheta / self.total_mass))
+        xacc  = temp - self.polemass_length * thetaacc * costheta / self.total_mass
+        if self.kinematics_integrator == 'euler':
+            x  = x + self.tau * x_dot
+            x_dot = x_dot + self.tau * xacc
+            theta = theta + self.tau * theta_dot
+            theta_dot = theta_dot + self.tau * thetaacc
+        else: # semi-implicit euler
+            x_dot = x_dot + self.tau * xacc
+            x  = x + self.tau * x_dot
+            theta_dot = theta_dot + self.tau * thetaacc
+            theta = theta + self.tau * theta_dot
+        print(x, x_dot, theta, theta_dot)
+        return x, x_dot, theta, theta_dot
+
+    def step_pds(self, action):
+        """Finds the resulting state given some noise in the form of random wind"""
+        wind = self.np_random.uniform(low=-1.0, high=1.0)
+        x, x_dot, theta, theta_dot = self.next_state(action, wind)
+        return x, x_dot, theta, theta_dot
 
     def reset(self):
+        """Resets the system to a random initial state"""
         self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
         self.steps_beyond_done = None
         return np.array(self.state)
 
     def render(self, mode='human'):
+        """Renders the cartpole environment"""
         screen_width = 600
         screen_height = 400
 
@@ -183,6 +209,7 @@ class CartpoleHomebrewEnv(gym.Env):
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
 
     def close(self):
+        """Closes cartpole environment"""
         if self.viewer:
             self.viewer.close()
             self.viewer = None
