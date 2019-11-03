@@ -95,7 +95,7 @@ class CartpoleHomebrewEnv(gym.Env):
         pds_state = (x_pds, x_dot_pds, theta_pds, theta_dot_pds)
         
         #Now implementing noise to arrive at final state
-        x, x_dot, theta, theta_dot = self.step_pds(action)
+        x, x_dot, theta, theta_dot, unknown_noise = self.step_pds(action)
         self.state = [x, x_dot, theta, theta_dot]
         
         done =  x < -self.x_threshold \
@@ -116,7 +116,7 @@ class CartpoleHomebrewEnv(gym.Env):
             self.steps_beyond_done += 1
             reward = 0.0
 
-        return np.array(self.state), np.array(pds_state), reward, done, {}
+        return np.array(self.state), np.array(pds_state), unknown_noise, reward, done, {}
     
     def next_state(self, action, wind=0.0):
         """Computes the dynamics of a cartpole system resulting from an action"""
@@ -146,7 +146,7 @@ class CartpoleHomebrewEnv(gym.Env):
         """Finds the resulting state given some noise in the form of random wind"""
         wind = self.np_random.uniform(low=-1.0, high=1.0)
         x, x_dot, theta, theta_dot = self.next_state(action, wind)
-        return x, x_dot, theta, theta_dot
+        return x, x_dot, theta, theta_dot, wind
 
     def reset(self):
         """Resets the system to a random initial state"""
