@@ -88,14 +88,14 @@ class CartpoleHomebrewEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def step(self, action, state):
+    def step(self, action, state, wind=0):
         """Takes an action to reach a post-decision state and final state"""
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         x_pds, x_dot_pds, theta_pds, theta_dot_pds = self.next_state(action, state)
         pds_state = (x_pds, x_dot_pds, theta_pds, theta_dot_pds)
         
         #Now implementing noise to arrive at final state
-        x, x_dot, theta, theta_dot, unknown_noise = self.step_pds(action, state)
+        x, x_dot, theta, theta_dot, unknown_noise = self.step_pds(action, state, wind)
 
         #Only set state to new state if we are taking an action
         #Otherwise, we know we are generating virtual experience
@@ -146,9 +146,10 @@ class CartpoleHomebrewEnv(gym.Env):
             theta = theta + self.tau * theta_dot
         return x, x_dot, theta, theta_dot
 
-    def step_pds(self, action, state):
+    def step_pds(self, action, state, wind=0):
         """Finds the resulting state given some noise in the form of random wind"""
-        wind = self.np_random.normal(loc=0.0, scale=.5)
+        if wind == 0:
+            wind = self.np_random.normal(loc=0.0, scale=.5)
         x, x_dot, theta, theta_dot = self.next_state(action, state, wind)
         return x, x_dot, theta, theta_dot, wind
 
