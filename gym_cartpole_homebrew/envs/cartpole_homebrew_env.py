@@ -99,7 +99,7 @@ class CartpoleHomebrewEnv(gym.Env):
 
         #Only set state to new state if we are taking an action
         #Otherwise, we know we are generating virtual experience
-        if state = self.state:
+        if state == self.state:
             self.state = [x, x_dot, theta, theta_dot]
         
         done =  x < -self.x_threshold \
