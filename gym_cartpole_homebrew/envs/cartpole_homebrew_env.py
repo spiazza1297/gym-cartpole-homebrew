@@ -139,7 +139,6 @@ class CartpoleHomebrewEnv(gym.Env):
             x  = x + self.tau * x_dot
             theta_dot = theta_dot + self.tau * thetaacc
             theta = theta + self.tau * theta_dot
-        print(x, x_dot, theta, theta_dot)
         return x, x_dot, theta, theta_dot
 
     def step_pds(self, action):
