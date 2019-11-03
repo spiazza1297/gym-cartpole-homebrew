@@ -88,7 +88,7 @@ class CartpoleHomebrewEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def step(self, action, state=self.state):
+    def step(self, action, state):
         """Takes an action to reach a post-decision state and final state"""
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         x_pds, x_dot_pds, theta_pds, theta_dot_pds = self.next_state(action, state)
@@ -99,7 +99,7 @@ class CartpoleHomebrewEnv(gym.Env):
 
         #Only set state to new state if we are taking an action
         #Otherwise, we know we are generating virtual experience
-        if state == self.state:
+        if np.array_equal(state, self.state):
             self.state = [x, x_dot, theta, theta_dot]
         
         done =  x < -self.x_threshold \
@@ -111,9 +111,9 @@ class CartpoleHomebrewEnv(gym.Env):
         #If generating virtual exp, dont affect the actual system (steps_beyond_done)
         if not done:
             reward = 1.0
-        elif self.steps_beyond_done is None or state == self.state:
+        elif self.steps_beyond_done is None or np.array_equal(state, self.state):
             # Pole just fell!
-            if state == self.state:
+            if np.array_equal(state, self.state):
                 self.steps_beyond_done = 0
             reward = 1.0
         else:
@@ -124,7 +124,7 @@ class CartpoleHomebrewEnv(gym.Env):
 
         return np.array([x, x_dot, theta, theta_dot]), np.array(pds_state), unknown_noise, reward, done, {}
     
-    def next_state(self, action, state=self.state, wind=0.0):
+    def next_state(self, action, state, wind=0.0):
         """Computes the dynamics of a cartpole system resulting from an action"""
         x, x_dot, theta, theta_dot = state
         force = self.force_mag if action==1 else -self.force_mag
@@ -146,7 +146,7 @@ class CartpoleHomebrewEnv(gym.Env):
             theta = theta + self.tau * theta_dot
         return x, x_dot, theta, theta_dot
 
-    def step_pds(self, action, state=self.state):
+    def step_pds(self, action, state):
         """Finds the resulting state given some noise in the form of random wind"""
         wind = self.np_random.normal(loc=0.0, scale=.5)
         x, x_dot, theta, theta_dot = self.next_state(action, state, wind)
