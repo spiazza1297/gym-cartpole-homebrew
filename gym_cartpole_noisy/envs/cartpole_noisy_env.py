@@ -2,10 +2,6 @@
 Classic cart-pole system implemented by Rich Sutton et al.
 Copied from http://incompleteideas.net/sutton/book/code/pole.c
 permalink: https://perma.cc/C9ZM-652R
-
-This version of cartpole is altered to add noise to the system. The action steps are broken into two methods.
-Step one is the transition from the state by taking an action. Step two is the transition from this post-decision
-state to the final state through some unknown noise.
 """
 
 import math
@@ -14,12 +10,12 @@ from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
 
-class CartpoleHomebrewEnv(gym.Env):
+class CartPoleNoiseEnv(gym.Env):
     """
     Description:
         A pole is attached by an un-actuated joint to a cart, which moves along a frictionless track. The pendulum starts upright, and the goal is to prevent it from falling over by increasing and reducing the cart's velocity.
     Source:
-        This environment corresponds to the version of the cart-pole problem described by Barto, Sutton, and Anderson. However, noise is added to the system after each action is taken.
+        This environment corresponds to the version of the cart-pole problem described by Barto, Sutton, and Anderson
     Observation: 
         Type: Box(4)
         Num	Observation                 Min         Max
@@ -38,7 +34,7 @@ class CartpoleHomebrewEnv(gym.Env):
     Reward:
         Reward is 1 for every step taken, including the termination step
     Starting State:
-        All observations are assigned a uniform random value in [-0.05, 0.05]
+        All observations are assigned a uniform random value in [-0.05..0.05]
     Episode Termination:
         Pole Angle is more than 12 degrees
         Cart Position is more than 2.4 (center of the cart reaches the edge of the display)
@@ -53,7 +49,6 @@ class CartpoleHomebrewEnv(gym.Env):
     }
 
     def __init__(self):
-        """Initiates with all variables necessary to compute dynamics of cartpole system"""
         self.gravity = 9.8
         self.masscart = 1.0
         self.masspole = 0.1
@@ -88,47 +83,11 @@ class CartpoleHomebrewEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def step(self, action, state, wind=0):
-        """Takes an action to reach a post-decision state and final state"""
+    def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        x_pds, x_dot_pds, theta_pds, theta_dot_pds = self.next_state(action, state)
-        pds_state = (x_pds, x_dot_pds, theta_pds, theta_dot_pds)
-        
-        #Now implementing noise to arrive at final state
-        x, x_dot, theta, theta_dot, unknown_noise = self.step_pds(action, state, wind)
-
-        #Only set state to new state if we are taking an action
-        #Otherwise, we know we are generating virtual experience
-        if np.array_equal(state, self.state):
-            self.state = [x, x_dot, theta, theta_dot]
-        
-        done =  x < -self.x_threshold \
-                or x > self.x_threshold \
-                or theta < -self.theta_threshold_radians \
-                or theta > self.theta_threshold_radians
-        done = bool(done)
-
-        #If generating virtual exp, dont affect the actual system (steps_beyond_done)
-        if not done:
-            reward = 1.0
-        elif self.steps_beyond_done is None or np.array_equal(state, self.state):
-            # Pole just fell!
-            if np.array_equal(state, self.state):
-                self.steps_beyond_done = 0
-            reward = 1.0
-        else:
-            if self.steps_beyond_done == 0:
-                logger.warn("You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior.")
-            self.steps_beyond_done += 1
-            reward = 0.0
-
-        return np.array([x, x_dot, theta, theta_dot]), np.array(pds_state), unknown_noise, reward, done, {}
-    
-    def next_state(self, action, state, wind=0.0):
-        """Computes the dynamics of a cartpole system resulting from an action"""
+        state = self.state
         x, x_dot, theta, theta_dot = state
         force = self.force_mag if action==1 else -self.force_mag
-        force += wind
         costheta = math.cos(theta)
         sintheta = math.sin(theta)
         temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
@@ -144,23 +103,82 @@ class CartpoleHomebrewEnv(gym.Env):
             x  = x + self.tau * x_dot
             theta_dot = theta_dot + self.tau * thetaacc
             theta = theta + self.tau * theta_dot
-        return x, x_dot, theta, theta_dot
+        pds = [x, x_dot, theta, theta_dot]
+        x, x_dot, theta, theta_dot, unknown_noise = self.induce_unknown_noise(x, x_dot, theta, theta_dot)
+        self.state = (x,x_dot,theta,theta_dot)
+        done =  x < -self.x_threshold \
+                or x > self.x_threshold \
+                or theta < -self.theta_threshold_radians \
+                or theta > self.theta_threshold_radians
+        done = bool(done)
 
-    def step_pds(self, action, state, wind=0):
-        """Finds the resulting state given some noise in the form of random wind"""
-        if wind == 0:
-            wind = self.np_random.normal(loc=0.0, scale=.5)
-        x, x_dot, theta, theta_dot = self.next_state(action, state, wind)
-        return x, x_dot, theta, theta_dot, wind
+        if not done:
+            reward = 1.0
+        elif self.steps_beyond_done is None:
+            # Pole just fell!
+            self.steps_beyond_done = 0
+            reward = 1.0
+        else:
+            if self.steps_beyond_done == 0:
+                logger.warn("You are calling 'step()' even though this environment has already returned done = True. You should always call 'reset()' once you receive 'done = True' -- any further steps are undefined behavior.")
+            self.steps_beyond_done += 1
+            reward = 0.0
+
+        return np.array(self.state), np.array(pds), unknown_noise, reward, done, {}
+
+    def induce_unknown_noise(self, x, x_dot, theta, theta_dot, noise=[]):
+        """Creates noise on the state, unknown to the agent"""
+        if len(noise) == 0:
+            unknown_noise = [np.random.normal(loc=0.0, scale=0.0), np.random.normal(loc=0.0, scale=0.0), np.random.normal(loc=0.0, scale=0.0), np.random.normal(loc=0.0, scale=0.0)]
+        else:
+            unknown_noise = noise
+        x = x + unknown_noise[0]
+        x_dot = x_dot + unknown_noise[1]
+        theta = theta + unknown_noise[2]
+        theta_dot = theta_dot + unknown_noise[3]
+        return x, x_dot, theta, theta_dot, unknown_noise
+
+    def virtual_step(self, action, state, noise=[]):
+        """Used to simulate the environment without affecting the current state"""
+        assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
+        x, x_dot, theta, theta_dot = state
+        force = self.force_mag if action==1 else -self.force_mag
+        costheta = math.cos(theta)
+        sintheta = math.sin(theta)
+        temp = (force + self.polemass_length * theta_dot * theta_dot * sintheta) / self.total_mass
+        thetaacc = (self.gravity * sintheta - costheta* temp) / (self.length * (4.0/3.0 - self.masspole * costheta * costheta / self.total_mass))
+        xacc  = temp - self.polemass_length * thetaacc * costheta / self.total_mass
+        if self.kinematics_integrator == 'euler':
+            x  = x + self.tau * x_dot
+            x_dot = x_dot + self.tau * xacc
+            theta = theta + self.tau * theta_dot
+            theta_dot = theta_dot + self.tau * thetaacc
+        else: # semi-implicit euler
+            x_dot = x_dot + self.tau * xacc
+            x  = x + self.tau * x_dot
+            theta_dot = theta_dot + self.tau * thetaacc
+            theta = theta + self.tau * theta_dot
+        pds = [x, x_dot, theta, theta_dot]
+        x, x_dot, theta, theta_dot, unknown_noise = self.induce_unknown_noise(x, x_dot, theta, theta_dot, noise)
+        state = (x,x_dot,theta,theta_dot)
+        done =  x < -self.x_threshold \
+                or x > self.x_threshold \
+                or theta < -self.theta_threshold_radians \
+                or theta > self.theta_threshold_radians
+        done = bool(done)
+
+        if not done:
+            reward = 1.0
+        else:
+            reward = 0.0
+        return np.array(state), np.array(pds), unknown_noise, reward, done, {}
 
     def reset(self):
-        """Resets the system to a random initial state"""
         self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
         self.steps_beyond_done = None
         return np.array(self.state)
 
     def render(self, mode='human'):
-        """Renders the cartpole environment"""
         screen_width = 600
         screen_height = 400
 
@@ -214,7 +232,6 @@ class CartpoleHomebrewEnv(gym.Env):
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
 
     def close(self):
-        """Closes cartpole environment"""
         if self.viewer:
             self.viewer.close()
             self.viewer = None
