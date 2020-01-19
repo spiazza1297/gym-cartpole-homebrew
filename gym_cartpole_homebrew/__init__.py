@@ -1,8 +1,8 @@
 from gym.envs.registration import register
 
 register(
-    id='CartpoleHomebrew-v0',
-    entry_point='gym_cartpole_homebrew.envs:CartpoleHomebrewEnv',
+    id='CartpoleNoisy-v0',
+    entry_point='gym_cartpole_noisy.envs:CartpoleNoisyEnv',
 )
 #register(
 #    id='foo-extrahard-v0',
